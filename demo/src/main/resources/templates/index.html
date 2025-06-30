@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostGIS 地点查询</title>
+    <link th:href="@{/css/bootstrap.min.css}" rel="stylesheet">
+    <link rel="stylesheet" th:href="@{/css/leaflet.css}" />
+    <style>
+        #map {
+            height: 400px;
+            margin-top: 20px;
+        }
+        .center-marker {
+            background-color: red;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
+<div class="container mt-4">
+    <h1>地点查询系统</h1>
+
+    <!-- 搜索表单 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form class="row g-3" th:action="@{/search}" method="get">
+                <div class="col-md-6">
+                    <label for="name" class="form-label">地点名称</label>
+                    <input type="text" class="form-control" id="name" name="name"
+                           th:value="${searchName != null} ? ${searchName} : ''">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary">搜索</button>
+                </div>
+            </form>
+
+            <form class="row g-3 mt-2" th:action="@{/nearby}" method="get">
+                <div class="col-md-3">
+                    <label for="lng" class="form-label">经度</label>
+                    <input type="number" step="0.0001" class="form-control" id="lng" name="lng"
+                           th:value="${lng != null} ? ${lng} : '116.3975'">
+                </div>
+                <div class="col-md-3">
+                    <label for="lat" class="form-label">纬度</label>
+                    <input type="number" step="0.0001" class="form-control" id="lat" name="lat"
+                           th:value="${lat != null} ? ${lat} : '39.9087'">
+                </div>
+                <div class="col-md-3">
+                    <label for="distance" class="form-label">距离(米)</label>
+                    <input type="number" class="form-control" id="distance" name="distance"
+                           th:value="${distance != null} ? ${distance} : '1000'">
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-success">查找附近</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 结果显示 -->
+    <div class="row">
+        <div class="col-md-6">
+            <h3>查询结果</h3>
+            <table class="table table-striped">
+                <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>地址</th>
+                    <th>经度</th>
+                    <th>纬度</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="location : ${locations}">
+                    <td th:text="${location.name}"></td>
+                    <td th:text="${location.address}"></td>
+                    <td th:text="${location.geom != null ? #numbers.formatDecimal(location.getLongitude(), 1, 4) : 'N/A'}">N/A</td>
+                    <td th:text="${location.geom != null ? #numbers.formatDecimal(location.getLatitude(), 1, 4) : 'N/A'}">N/A</td>
+                </tr>
+                <tr th:if="${locations == null || locations.empty}">
+                    <td colspan="4" class="text-center">没有找到匹配的地点</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="col-md-6">
+            <h3>地图展示</h3>
+            <div id="map"></div>
+        </div>
+    </div>
+</div>
+
+<script th:src="@{/js/bootstrap.bundle.min.js}"></script>
+<script th:src="@{/js/leaflet.js}"></script>
+<script th:inline="javascript">
+    /*<![CDATA[*/
+    document.addEventListener('DOMContentLoaded', function() {
+        // 初始化地图
+        const map = L.map('map').setView([39.9087, 116.3975], 12);
+
+        // 使用天地图 - 请替换为您的有效密钥
+        L.tileLayer('https://t{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=feb52e2f777ee9848070c658d9ed7419', {
+            subdomains: ['0', '1', '2', '3', '4', '5', '6', '7'],
+            attribution: '&copy; <a href="https://www.tianditu.gov.cn/">天地图</a>'
+        }).addTo(map);
+
+        // 测试标记
+        L.marker([39.9, 116.4]).addTo(map)
+            .bindPopup("测试点");
+
+        // 获取后端数据并转换为数组
+        const rawLocations = /*[[${locations}]]*/ [];
+        const locations = Array.isArray(rawLocations) ? rawLocations : [];
+
+        console.log("地点数据:", locations);
+
+        // 添加标记
+        if (locations.length > 0) {
+            locations.forEach(loc => {
+                if (loc.latitude && loc.longitude) {
+                    L.marker([loc.latitude, loc.longitude])
+                        .bindPopup(`<b>${loc.name}</b><br>${loc.address}`)
+                        .addTo(map);
+                }
+            });
+
+            // 自动调整视图包含所有标记
+            const bounds = L.latLngBounds(
+                locations.map(loc => [loc.latitude, loc.longitude])
+            );
+            map.fitBounds(bounds.pad(0.1));
+        }
+
+        // 处理中心点和范围
+        const lng = /*[[${lng != null} ? ${lng} : null]]*/ null;
+        const lat = /*[[${lat != null} ? ${lat} : null]]*/ null;
+        const distance = /*[[${distance != null} ? ${distance} : 0]]*/ 0;
+
+        if (lng && lat) {
+            // 添加中心点标记
+            L.marker([lat, lng], {
+                icon: L.divIcon({
+                    className: 'center-marker',
+                    iconSize: [20, 20]
+                })
+            }).addTo(map);
+
+            // 添加范围圆
+            if (distance > 0) {
+                L.circle([lat, lng], {
+                    color: 'red',
+                    fillColor: '#f03',
+                    fillOpacity: 0.2,
+                    radius: distance
+                }).addTo(map);
+            }
+
+            // 居中显示
+            map.setView([lat, lng], 14);
+        }
+    });
+    /*]]>*/
+</script>
+</body>
+</html>
